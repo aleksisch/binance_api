@@ -1,5 +1,3 @@
-debug=true
-
 [package]
 name = "MarketData"
 version = "0.1.0"
@@ -20,3 +18,4 @@ rand = "0.8.5"
 log = "0.4.22"
 env_logger = "0.11.5"
 derive-new = "0.7.0"
+derive_more = { version = "1.0.0", features = ["add", "mul"] }

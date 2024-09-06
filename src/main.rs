@@ -5,6 +5,7 @@ mod connection;
 mod lob;
 mod scheme;
 mod structure;
+mod runner;
 
 use crate::scheme::connector::{MarketQueries, WssStream};
 use crate::structure::{Instrument, MDResponse};
@@ -13,6 +14,12 @@ use futures_util::future::join_all;
 use log::{info};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use crate::lob::orderbooks::DepthBookManager;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+use tokio::time::sleep;
+use crate::runner::{Runner};
 
 /// Translator from assembly to binary
 #[derive(Parser, Debug)]
@@ -44,14 +51,15 @@ async fn main() {
             .filter(|inst| args.instruments.contains(inst.to_raw_string()))
             .collect(),
     );
+
+    let (tx, mut rx) = mpsc::channel(100);
+
     log::debug!("{:?}", &available);
-    let exchanges: Vec<Box<dyn MarketQueries + Send + Sync>> =
-        vec![Box::new(scheme::binance::Api::new())];
+    let exchanges: Vec<Arc<dyn MarketQueries + Send + Sync>> =
+        vec![Arc::new(scheme::binance::Api::new())];
     let shared_exch = Arc::new(exchanges);
 
-    let streams = vec![WssStream::Depth, WssStream::Trade];
-
-    let mut handles = vec![];
+    let mut handles: Vec<JoinHandle<()>> = vec![];
 
     let insts_map: Arc<HashMap<String, Instrument>> = Arc::new(
         available
@@ -63,38 +71,14 @@ async fn main() {
     for sz in 0..shared_exch.len() {
         for _ in 0..args.conn_num {
             let shared_vec_clone = Arc::clone(&shared_exch);
-            let insts_clone = Arc::clone(&available);
-            let insts_map_clone = Arc::clone(&insts_map);
-            let streams_clone = streams.clone();
-            handles.push(tokio::spawn(async move {
-                let exch = &shared_vec_clone[sz];
-                let mut client = crate::connection::WsClient::connect_to(&exch.connect_uri()).await;
-                client
-                    .send((&exch).subscribe(insts_clone.as_ref(), &streams_clone))
-                    .await;
-                loop {
-                    let data = client.wait().await;
-                    match data {
-                        None => break,
-                        Some(res) => {
-                            let result = exch.handle_response(&res, insts_map_clone.as_ref());
-                            if result.is_none() {
-                                info!("Couldn't parse {}", res);
-                                continue;
-                            }
-                            info!("Parsed: {:?}", result);
-                            match result.unwrap() {
-                                MDResponse::Trade(tr) => {}
-                                MDResponse::Snapshot(snap) => {}
-                                MDResponse::Delta(delta) => {}
-                                MDResponse::Ping => {}
-                            }
-                        }
-                    }
-                }
-            }));
+            let exch = shared_vec_clone[sz].clone();
+
+            handles.push(Runner::create_connection(exch, tx.clone(), available.clone(), insts_map.clone()));
         }
     }
+
+    handles.push(Runner::spawn_main_loop(tx.clone(), rx, DepthBookManager::new(available.as_ref())));
+
     join_all(handles).await;
     // handles.iter().map(|h| h.)
 }

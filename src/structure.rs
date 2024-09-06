@@ -1,11 +1,18 @@
-use crate::common::{Id, Level};
+use crate::common::{Id, Level, Price};
 use derive_new::new;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
-#[derive(Clone)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Coin(pub String);
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Feed {
     FUTURE(u64),
     PERP,
@@ -24,17 +31,18 @@ impl Feed {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub enum Exchange {
     BINANCE,
 }
 
-#[derive(Clone)]
+#[derive(Clone, new, Eq, Hash, PartialEq)]
 pub struct Instrument {
     pub base: Coin,
     pub margin: Coin,
     pub feed: Feed,
     pub exchange: Exchange,
+    pub price_precision: u32,
     raw: String,
 }
 
@@ -45,24 +53,12 @@ impl fmt::Debug for Instrument {
 }
 
 impl Instrument {
-    pub fn new(
-        base: Coin,
-        margin: Coin,
-        feed: Feed,
-        exchange: Exchange,
-        raw: String,
-    ) -> Instrument {
-        Instrument {
-            base,
-            margin,
-            feed,
-            exchange,
-            raw,
-        }
-    }
-
     pub fn to_raw_string(&self) -> &String {
         &self.raw
+    }
+
+    pub fn get_precision(&self) -> Price {
+        Price::new(10_f32.powf(-1. * self.price_precision as f32))
     }
 }
 
@@ -70,22 +66,30 @@ impl Instrument {
 pub struct Trade {
     inst: Instrument,
     info: Level,
+    pub(crate) side: Side,
     first: Id,
     last: Id,
 }
 
 struct BookSide {}
 
-#[derive(Debug)]
-pub struct Snapshot(pub crate::lob::order_book::OrderBook);
-
 #[derive(new, Debug)]
 pub struct Delta {
-    inst: Instrument,
-    buy: Vec<Level>,
-    sell: Vec<Level>,
-    first: Id,
-    last: Id,
+    pub inst: Instrument,
+    pub buy: Vec<Level>,
+    pub sell: Vec<Level>,
+    pub first: Id,
+    pub last: Id,
+    pub last_stream: Id,
+}
+
+#[derive(Debug, new)]
+pub struct Snapshot {
+    pub inst: Instrument,
+    pub buy: Vec<Level>,
+    pub sell: Vec<Level>,
+    pub last: Id,
+    pub time: u64,
 }
 
 #[derive(Debug)]
@@ -94,4 +98,15 @@ pub enum MDResponse {
     Snapshot(Snapshot),
     Delta(Delta),
     Ping,
+}
+
+impl MDResponse {
+    pub fn get_inst(&self) -> Option<Instrument> {
+        Some(match self {
+            MDResponse::Ping => return None,
+            MDResponse::Delta(d) => d.inst.clone(),
+            MDResponse::Snapshot(d) => d.inst.clone(),
+            MDResponse::Trade(d) => d.inst.clone(),
+        })
+    }
 }

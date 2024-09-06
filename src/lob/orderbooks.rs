@@ -1,21 +1,22 @@
-use crate::lob::order_book::OrderBook;
+use crate::lob::order_book::{OrderBook, DepthUpdateError};
 use crate::structure::{Instrument, MDResponse};
 use std::collections::HashMap;
+use log::{error, info};
+use crate::lob::order_book::DepthUpdateError::UnknownInstrument;
 
-struct DepthBookManager {
+pub struct DepthBookManager {
     books: HashMap<Instrument, OrderBook>,
 }
 
 impl DepthBookManager {
-    // fn new() -> DepthBookManager {
-    //     DepthBookManager { books: HashMap::new() }
-    // }
-    //
-    // fn get(&mut self, instrument: Instrument) -> &OrderBook {
-    //     self.books.entry(instrument).or_insert(OrderBook::new());
-    // }
-    //
-    // fn update(&mut self, instrument: Instrument, response: MDResponse) -> Some(&OrderBook) {
-    //     self.books.entry(instrument).or_insert(OrderBook::new());
-    // }
+    pub fn new(insts: &Vec::<Instrument>) -> DepthBookManager {
+        DepthBookManager { books: insts.iter().map(|inst| (inst.clone(), OrderBook::new(inst.get_precision()))).collect() }
+    }
+
+    pub fn update(&mut self, instrument: &Instrument, response: MDResponse) -> Result<&OrderBook, DepthUpdateError> {
+        match self.books.get_mut(instrument) {
+            None => Err(UnknownInstrument),
+            Some(book) => book.apply(response),
+        }
+    }
 }

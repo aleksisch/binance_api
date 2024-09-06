@@ -1,10 +1,12 @@
-use crate::common::Level;
+use crate::common::{Level, Price};
 use crate::scheme::connector::{AliasInstrument, HTTPApi, MarketQueries, Streams, WssStream};
-use crate::structure::{Coin, Exchange, Feed, Instrument, MDResponse};
+use crate::structure::{Coin, Exchange, Feed, Instrument, MDResponse, Side};
+use crate::scheme::http_client::HTTPClient;
 use crate::{common, structure};
 use serde::{Deserialize, Serialize};
 use std::string::ToString;
 use std::time::SystemTime;
+use reqwest::Url;
 
 #[derive(Serialize)]
 pub struct Connect {
@@ -19,6 +21,7 @@ pub struct Symbol {
     pub baseAsset: String,
     pub quoteAsset: String,
     pub contractType: String,
+    pub pricePrecision: u32,
     pub deliveryDate: u64,
 }
 
@@ -76,6 +79,8 @@ struct Trade {
     first_id: u64,
     #[serde(alias = "l")]
     last_id: u64,
+    #[serde(alias = "m")]
+    is_mm: bool,
 }
 
 impl Trade {
@@ -83,6 +88,7 @@ impl Trade {
         Some(structure::Trade::new(
             insts_map.get(&self.symbol)?.clone(),
             Level::new(self.price.parse().ok()?, self.qty.parse().ok()?),
+            if self.is_mm == true { Side::Sell } else { Side::Buy },
             common::Id(self.first_id),
             common::Id(self.last_id),
         ))
@@ -97,32 +103,56 @@ struct Delta {
     first_id: u64,
     #[serde(alias = "u")]
     last_id: u64,
+    #[serde(alias = "pu")]
+    last_stream: u64,
     #[serde(alias = "b")]
     buy: Vec<(String, String)>,
     #[serde(alias = "a")]
     sell: Vec<(String, String)>,
 }
 
+
+#[derive(Deserialize)]
+struct Snapshot {
+    #[serde(alias = "E")]
+    message_time: u64,
+    #[serde(alias = "lastUpdateId")]
+    last_id: u64,
+    #[serde(alias = "bids")]
+    buy: Vec<(String, String)>,
+    #[serde(alias = "asks")]
+    sell: Vec<(String, String)>,
+}
+
+fn pair_to_levels(pairs: Vec<(String, String)>) -> Vec<Level> {
+    pairs
+        .iter()
+        .map(|v| Level::from_str_pair(v))
+        .flatten()
+        .collect()
+}
+
 impl Delta {
     fn to_regular(self, insts_map: &AliasInstrument) -> Option<structure::Delta> {
-        let buy = self
-            .buy
-            .iter()
-            .map(|v| Level::from_str_pair(v))
-            .flatten()
-            .collect();
-        let sell = self
-            .sell
-            .iter()
-            .map(|v| Level::from_str_pair(v))
-            .flatten()
-            .collect();
         Some(structure::Delta::new(
             insts_map.get(&self.symbol)?.clone(),
-            buy,
-            sell,
+            pair_to_levels(self.buy),
+            pair_to_levels(self.sell),
             common::Id(self.first_id),
             common::Id(self.last_id),
+            common::Id(self.last_stream),
+        ))
+    }
+}
+
+impl Snapshot {
+    fn to_regular(self, inst: Instrument) -> Option<structure::Snapshot> {
+        Some(structure::Snapshot::new(
+            inst,
+            pair_to_levels(self.buy),
+            pair_to_levels(self.sell),
+            common::Id(self.last_id),
+            self.message_time,
         ))
     }
 }
@@ -130,6 +160,12 @@ impl Delta {
 pub struct Api;
 
 impl Api {
+
+    fn get_api_url(s: &str) -> String {
+        const BASE_HTTP_API: &str = "https://fapi.binance.com/fapi/v1";
+        BASE_HTTP_API.to_owned() + s
+    }
+
     pub(crate) fn new() -> Api {
         Api {}
     }
@@ -141,12 +177,8 @@ impl Api {
         }
     }
 
-    pub async fn instrument_info(self) -> Vec<Instrument> {
-        let res = reqwest::get("https://fapi.binance.com/fapi/v1/exchangeInfo")
-            .await
-            .unwrap();
-        let body = res.text().await.unwrap().to_string();
-        serde_json::from_str::<ExchangeInfo>(body.as_str())
+    pub async fn instrument_info(&self) -> Vec<Instrument> {
+        HTTPClient::get::<ExchangeInfo>(Self::get_api_url("/exchangeInfo").as_ref()).await
             .unwrap()
             .symbols
             .iter()
@@ -157,11 +189,24 @@ impl Api {
                     Coin((&symb.quoteAsset).clone()),
                     feed,
                     Exchange::BINANCE,
+                    symb.pricePrecision,
                     (&symb.symbol).clone(),
                 ))
             })
             .flatten()
             .collect()
+    }
+
+
+    pub async fn request_depth_shapshot(inst: Instrument) -> structure::Snapshot {
+        HTTPClient::get::<Snapshot>(
+            Url::parse_with_params(&Self::get_api_url("/depth"), &[("symbol", inst.to_raw_string())])
+                .unwrap()
+                .as_str())
+            .await
+            .unwrap()
+            .to_regular(inst)
+            .unwrap()
     }
 }
 
@@ -207,7 +252,13 @@ impl MarketQueries for Api {
                     .ok()?
                     .to_regular(insts_map)?,
             ),
-            _ => MDResponse::Ping,
+            _ => {
+                if resp == "ping" {
+                    MDResponse::Ping
+                } else {
+                    return None
+                }
+            },
         })
     }
 }
