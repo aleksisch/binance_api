@@ -1,31 +1,38 @@
+use derive_more::{Add, Display, Mul, Sub};
 use derive_new::new;
 use std::num::ParseFloatError;
 use std::str::FromStr;
-use derive_more::{Add, Mul, Sub};
 
-
-pub const DEPTHBOOK_DEPTH: usize = 20;
-
-#[derive(Default, Debug, Clone, PartialEq, PartialOrd, Sub, Mul, new)]
-pub struct Price(f32);
+#[derive(Default, Display, Debug, Clone, PartialEq, PartialOrd, Sub, Mul, new)]
+pub struct Price(pub f32);
 
 impl Price {
     pub fn abs(self) -> Self {
         Price(self.0.abs())
     }
 
-    pub fn same_tick(self, tick: Price) -> bool {
-        self.abs() * 4. < tick
+    pub fn same_tick(self, tick: &Price) -> bool {
+        self.abs() * 4. < *tick
     }
 }
 
-#[derive(Default, Debug, Clone, Sub, Mul, PartialEq, PartialOrd, new)]
-pub struct Qty(f32);
+#[derive(Default, Display, Debug, Clone, Sub, Mul, PartialEq, PartialOrd, new)]
+pub struct Qty(pub f32);
 
 impl Qty {
     pub fn abs(self) -> Self {
         Qty(self.0.abs())
     }
+
+    pub fn same_tick(self, tick: Qty) -> bool {
+        self.abs() * 4. < tick
+    }
+}
+
+#[derive(Debug, Clone, new)]
+pub struct Precision {
+    pub price: Price,
+    pub qty: Qty,
 }
 
 impl FromStr for Qty {
@@ -60,8 +67,8 @@ impl Level {
         Level::new(Price::new(p.clone()), Qty::new(q.clone()))
     }
 
-    pub fn eq(&self, rhs: Level, tick_price: Price, qty_precision: Qty) -> bool {
-        (rhs.price - self.price.clone()).same_tick(tick_price) &&
-            (rhs.qty - self.qty.clone()).abs() * 4. < qty_precision
+    pub fn eq(&self, rhs: Level, precision: &Precision) -> bool {
+        (rhs.price - self.price.clone()).same_tick(&precision.price)
+            && (rhs.qty - self.qty.clone()).abs() * 4. < precision.qty
     }
 }

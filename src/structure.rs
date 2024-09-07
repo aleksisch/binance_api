@@ -1,4 +1,4 @@
-use crate::common::{Id, Level, Price};
+use crate::common::{Id, Level, Precision};
 use derive_new::new;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -36,14 +36,30 @@ pub enum Exchange {
     BINANCE,
 }
 
-#[derive(Clone, new, Eq, Hash, PartialEq)]
+#[derive(Clone, new)]
 pub struct Instrument {
     pub base: Coin,
     pub margin: Coin,
     pub feed: Feed,
     pub exchange: Exchange,
-    pub price_precision: u32,
+    pub precision: Precision,
     raw: String,
+}
+
+impl PartialEq for Instrument {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl Eq for Instrument {}
+
+impl Hash for Instrument {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.raw.hash(state);
+        self.feed.hash(state);
+        self.exchange.hash(state);
+    }
 }
 
 impl fmt::Debug for Instrument {
@@ -56,10 +72,6 @@ impl Instrument {
     pub fn to_raw_string(&self) -> &String {
         &self.raw
     }
-
-    pub fn get_precision(&self) -> Price {
-        Price::new(10_f32.powf(-1. * self.price_precision as f32))
-    }
 }
 
 #[derive(new, Debug)]
@@ -70,8 +82,6 @@ pub struct Trade {
     first: Id,
     last: Id,
 }
-
-struct BookSide {}
 
 #[derive(new, Debug)]
 pub struct Delta {
