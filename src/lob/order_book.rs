@@ -1,6 +1,7 @@
 use crate::common::{Id, Level, Precision, Price, Qty};
 use crate::structure;
 use crate::structure::{Delta, MDResponse, Snapshot, Trade};
+use futures_util::future::err;
 use log::{debug, info, warn};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -24,11 +25,10 @@ impl Side {
             return None;
         }
 
-        let (idx, _lvl) = self
-            .levels
-            .iter()
-            .enumerate()
-            .find(|(_idx, lvl)| ((&lvl).price.clone() - price.clone()).same_tick(&tick_sz.price))?;
+        let (idx, _lvl) =
+            self.levels.iter().enumerate().find(|(_idx, lvl)| {
+                ((&lvl).price.clone() - price.clone()).same_tick(&tick_sz.price)
+            })?;
         Some(idx)
     }
 
@@ -97,6 +97,7 @@ pub(crate) enum DepthUpdateError {
     DepthStale,
     MissedUpdate,
     WaitSnapshot,
+    StaleUpdate,
     UnknownInstrument,
 }
 
@@ -149,7 +150,8 @@ impl OrderBook {
                     "Id: {:?} {:?} {:?}",
                     delta.last, delta.first, delta.last_stream
                 );
-                self.try_apply_delta(delta)
+                self.scheduled.insert(delta.first.clone(), delta);
+                self.try_apply_scheduled()
             }
             MDResponse::Ping => unreachable!(),
         }
@@ -228,36 +230,42 @@ impl OrderBook {
     }
 
     fn try_apply_scheduled(&mut self) -> Result<&Self, DepthUpdateError> {
-        match self.scheduled.pop_first() {
-            Some((_k, v)) => self.try_apply_delta(v),
+        let mut error: Option<DepthUpdateError> = None;
+
+        while let Some((k, v)) = self.scheduled.pop_first() {
+            let res = self.try_apply_delta(v);
+            match res {
+                Some(DepthUpdateError::StaleUpdate) => error = Some(DepthUpdateError::StaleUpdate),
+                Some(err) => return Err(err),
+                None => error = None,
+            }
+        }
+        match error {
             None => Ok(self),
+            Some(err) => Err(err),
         }
     }
 
-    fn try_apply_delta(&mut self, delta: Delta) -> Result<&Self, DepthUpdateError> {
+    fn try_apply_delta(&mut self, delta: Delta) -> Option<DepthUpdateError> {
         match self.match_id(delta.last_stream.clone()) {
-            Ordering::Less => {
-                self.try_apply_scheduled()
-                // Err(DepthUpdateError::StaleUpdate)
-            }
+            Ordering::Less => Some(DepthUpdateError::StaleUpdate),
             Ordering::Equal => {
                 self.add_diff(delta);
-                self.try_apply_scheduled()
-                // Ok(self)
+                None
             }
             Ordering::Greater => {
                 let id = delta.first.clone();
                 self.scheduled.insert(id.clone(), delta);
-                if self.is_stale_depth(id.clone()) {
+                Some(if self.is_stale_depth(id.clone()) {
                     if self.snapshot_requested {
-                        Err(DepthUpdateError::WaitSnapshot)
+                        DepthUpdateError::WaitSnapshot
                     } else {
                         self.snapshot_requested = true;
-                        Err(DepthUpdateError::DepthStale)
+                        DepthUpdateError::DepthStale
                     }
                 } else {
-                    Err(DepthUpdateError::MissedUpdate)
-                }
+                    DepthUpdateError::MissedUpdate
+                })
             }
         }
     }

@@ -1,4 +1,7 @@
+use crate::structure;
 use crate::structure::{Instrument, MDResponse};
+use async_trait::async_trait;
+use clap::builder::Str;
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -7,9 +10,11 @@ pub enum WssStream {
     Depth,
 }
 
+#[async_trait]
 pub trait HTTPApi {
     // todo: generalize http calls with this trait
-    // fn instrument_info(self) -> Vec::<Instrument>;
+    async fn instrument_info(&self) -> Vec<Instrument>;
+    async fn request_depth_shapshot(&self, inst: Instrument) -> structure::Snapshot;
 }
 
 pub type Streams = Vec<WssStream>;

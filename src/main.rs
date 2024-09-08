@@ -1,6 +1,7 @@
 extern crate core;
 
 mod common;
+mod config;
 mod connection;
 mod lob;
 mod runner;
@@ -9,10 +10,10 @@ mod structure;
 
 use crate::lob::orderbooks::DepthBookManager;
 use crate::runner::Runner;
-use crate::scheme::connector::{MarketQueries};
-use crate::structure::{Instrument};
+use crate::scheme::connector::{HTTPApi, MarketQueries};
+use crate::structure::{Exchange, Instrument};
 use clap::Parser;
-use futures_util::future::join_all;
+use futures_util::future::{join_all, BoxFuture};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -22,10 +23,9 @@ use tokio::task::JoinHandle;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Assembly file
     #[arg(short, long, default_values_t = ["BTCUSDT".to_string()])]
     instruments: Vec<String>,
-    #[arg(short, long, default_value = "1")]
+    #[arg(short, long, default_value = "3")]
     conn_num: u32,
 }
 
@@ -52,9 +52,12 @@ async fn main() {
     let (tx, mut rx) = mpsc::channel(100);
 
     log::debug!("{:?}", &available);
-    let exchanges: Vec<Arc<dyn MarketQueries + Send + Sync>> =
-        vec![Arc::new(scheme::binance::Api::new())];
-    let shared_exch = Arc::new(exchanges);
+    let wss_exchanges: Arc<Vec<Arc<dyn MarketQueries + Send + Sync>>> =
+        Arc::new(vec![Arc::new(scheme::binance::Api::new())]);
+
+    // todo: replace vec with HashMap. It's not clean due to async trait
+    let http_exchanges: Vec<(Exchange, Box<dyn HTTPApi + Send + Sync>)> =
+        vec![(Exchange::BINANCE, Box::new(scheme::binance::Api::new()))];
 
     let mut handles: Vec<JoinHandle<()>> = vec![];
 
@@ -65,9 +68,9 @@ async fn main() {
             .collect(),
     );
 
-    for sz in 0..shared_exch.len() {
+    for sz in 0..wss_exchanges.len() {
         for _ in 0..args.conn_num {
-            let shared_vec_clone = Arc::clone(&shared_exch);
+            let shared_vec_clone = Arc::clone(&wss_exchanges);
             let exch = shared_vec_clone[sz].clone();
 
             handles.push(Runner::create_connection(
@@ -80,6 +83,7 @@ async fn main() {
     }
 
     handles.push(Runner::spawn_main_loop(
+        http_exchanges,
         tx.clone(),
         rx,
         DepthBookManager::new(available.as_ref()),

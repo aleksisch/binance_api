@@ -3,6 +3,7 @@ use crate::scheme::connector::{AliasInstrument, HTTPApi, MarketQueries, Streams,
 use crate::scheme::http_client::HTTPClient;
 use crate::structure::{Coin, Exchange, Feed, Instrument, MDResponse, Side};
 use crate::{common, structure};
+use async_trait::async_trait;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -220,8 +221,11 @@ impl Api {
             Err(_) => rand::random(),
         }
     }
+}
 
-    pub async fn instrument_info(&self) -> Vec<Instrument> {
+#[async_trait]
+impl HTTPApi for Api {
+    async fn instrument_info(&self) -> Vec<Instrument> {
         HTTPClient::get::<ExchangeInfo>(Self::get_api_url("/exchangeInfo").as_ref())
             .await
             .unwrap()
@@ -242,7 +246,7 @@ impl Api {
             .collect()
     }
 
-    pub async fn request_depth_shapshot(inst: Instrument) -> structure::Snapshot {
+    async fn request_depth_shapshot(&self, inst: Instrument) -> structure::Snapshot {
         HTTPClient::get::<Snapshot>(
             Url::parse_with_params(
                 &Self::get_api_url("/depth"),
@@ -257,8 +261,6 @@ impl Api {
         .unwrap()
     }
 }
-
-impl HTTPApi for Api {}
 
 impl MarketQueries for Api {
     fn connect_uri(&self) -> &'static str {
