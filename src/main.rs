@@ -8,6 +8,7 @@ mod runner;
 mod scheme;
 mod structure;
 
+use crate::config::MDConfig;
 use crate::lob::orderbooks::DepthBookManager;
 use crate::runner::Runner;
 use crate::scheme::connector::{HTTPApi, MarketQueries};
@@ -16,6 +17,7 @@ use clap::Parser;
 use futures_util::future::{join_all, BoxFuture};
 use std::collections::HashMap;
 use std::sync::Arc;
+use futures_util::{future, StreamExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -26,7 +28,11 @@ struct Args {
     #[arg(short, long, default_values_t = ["BTCUSDT".to_string()])]
     instruments: Vec<String>,
     #[arg(short, long, default_value = "3")]
-    conn_num: u32,
+    num_conn: u32,
+    #[arg(short, long, default_value = "src/endpoints.toml")]
+    config_path: String,
+    #[arg(long, default_value = "100", help = "Maximum number of missed ids, after which request snapshot")]
+    delay_limit: u32,
 }
 
 #[tokio::main]
@@ -38,26 +44,33 @@ async fn main() {
     log::info!(
         "Passed arguments: {:?} {:?}",
         args.instruments,
-        args.conn_num
+        args.num_conn
     );
-    let available: Arc<Vec<Instrument>> = Arc::new(
-        scheme::binance::Api::new()
-            .instrument_info()
-            .await
-            .into_iter()
-            .filter(|inst| args.instruments.contains(inst.to_raw_string()))
-            .collect(),
-    );
+    let cfg = MDConfig::new(args.config_path).expect("Failed to parse")
 
     let (tx, mut rx) = mpsc::channel(100);
 
-    log::debug!("{:?}", &available);
     let wss_exchanges: Arc<Vec<Arc<dyn MarketQueries + Send + Sync>>> =
-        Arc::new(vec![Arc::new(scheme::binance::Api::new())]);
+        Arc::new(vec![Arc::new(scheme::binance::Api::new(cfg.get(Exchange::BINANCE)))]);
 
-    // todo: replace vec with HashMap. It's not clean due to async trait
+    // todo: replace vec with HashMap. It's not easy due to async trait
     let http_exchanges: Vec<(Exchange, Box<dyn HTTPApi + Send + Sync>)> =
         vec![(Exchange::BINANCE, Box::new(scheme::binance::Api::new()))];
+
+    let available: Arc<Vec<Instrument>> = Arc::new(
+        future::join_all(http_exchanges.iter().map(|(_, exch)| async {
+            exch.instrument_info()
+                .await
+                .into_iter()
+                .filter(|inst| args.instruments.contains(inst.to_raw_string()))
+                .into_iter()
+                .collect::<Vec<Instrument>>()
+        }).collect::<Vec<_>>())
+            .await
+            .into_iter()
+            .flatten()
+            .collect());
+    log::debug!("{:?}", &available);
 
     let mut handles: Vec<JoinHandle<()>> = vec![];
 
@@ -69,7 +82,7 @@ async fn main() {
     );
 
     for sz in 0..wss_exchanges.len() {
-        for _ in 0..args.conn_num {
+        for _ in 0..args.num_conn {
             let shared_vec_clone = Arc::clone(&wss_exchanges);
             let exch = shared_vec_clone[sz].clone();
 

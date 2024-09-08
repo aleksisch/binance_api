@@ -1,5 +1,6 @@
 use crate::common::{Id, Level, Precision};
 use derive_new::new;
+use serde::Deserialize;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -31,7 +32,7 @@ impl Feed {
     }
 }
 
-#[derive(Clone, Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq, Deserialize)]
 pub enum Exchange {
     BINANCE,
 }

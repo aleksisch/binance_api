@@ -1,0 +1,6 @@
+[[endpoint]]
+exchange = "BINANCE"
+http_api = "https://fapi.binance.com/fapi/v1"
+exchange_info = "/exchangeInfo"
+snapshot = "/depth"
+wss_api = "wss://fstream.binance.com/ws"
