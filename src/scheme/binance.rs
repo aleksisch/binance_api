@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::string::ToString;
 use std::time::SystemTime;
+use crate::config::ExchangeConfig;
 
 #[derive(Serialize)]
 pub struct Connect {
@@ -203,16 +204,17 @@ impl Snapshot {
     }
 }
 
-pub struct Api;
+pub struct Api {
+    cfg: ExchangeConfig,
+}
 
 impl Api {
-    fn get_api_url(s: &str) -> String {
-        const BASE_HTTP_API: &str = "https://fapi.binance.com/fapi/v1";
-        BASE_HTTP_API.to_owned() + s
+    fn get_api_url(&self, s: &str) -> String {
+        self.cfg.http_api.to_owned() + s
     }
 
-    pub(crate) fn new() -> Api {
-        Api {}
+    pub(crate) fn new(cfg: ExchangeConfig) -> Api {
+        Api { cfg }
     }
 
     fn get_sub_id() -> u64 {
@@ -226,7 +228,7 @@ impl Api {
 #[async_trait]
 impl HTTPApi for Api {
     async fn instrument_info(&self) -> Vec<Instrument> {
-        HTTPClient::get::<ExchangeInfo>(Self::get_api_url("/exchangeInfo").as_ref())
+        HTTPClient::get::<ExchangeInfo>(self.get_api_url(self.cfg.exchange_info.as_ref()).as_ref())
             .await
             .unwrap()
             .symbols
@@ -249,7 +251,7 @@ impl HTTPApi for Api {
     async fn request_depth_shapshot(&self, inst: Instrument) -> structure::Snapshot {
         HTTPClient::get::<Snapshot>(
             Url::parse_with_params(
-                &Self::get_api_url("/depth"),
+                &self.get_api_url(self.cfg.snapshot.as_ref()),
                 &[("symbol", inst.to_raw_string())],
             )
             .unwrap()
@@ -264,9 +266,7 @@ impl HTTPApi for Api {
 
 impl MarketQueries for Api {
     fn connect_uri(&self) -> &'static str {
-        // "wss://fstream.binance.com"
-        // "wss://ws-api.binance.com:443/ws-api/v3"
-        "wss://fstream.binance.com/ws"
+        self.cfg.wss_api.as_ref()
     }
 
     fn pong(&self) -> &'static str {
