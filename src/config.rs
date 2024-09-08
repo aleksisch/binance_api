@@ -1,18 +1,14 @@
 use crate::structure::Exchange;
-use clap::builder::Str;
-use config::{Config, ConfigError, Environment, File};
+use config::{Config, ConfigError, File};
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ExchangeConfig {
     exchange: Exchange,
     pub http_api: String,
     pub exchange_info: String,
     pub snapshot: String,
-
     pub wss_api: String,
-    pub delta_stream: String,
-    pub trades_stream: String,
 }
 
 #[derive(Deserialize)]

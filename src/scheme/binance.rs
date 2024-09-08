@@ -1,4 +1,5 @@
 use crate::common::{Level, Precision, Price, Qty};
+use crate::config::ExchangeConfig;
 use crate::scheme::connector::{AliasInstrument, HTTPApi, MarketQueries, Streams, WssStream};
 use crate::scheme::http_client::HTTPClient;
 use crate::structure::{Coin, Exchange, Feed, Instrument, MDResponse, Side};
@@ -9,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::string::ToString;
 use std::time::SystemTime;
-use crate::config::ExchangeConfig;
 
 #[derive(Serialize)]
 pub struct Connect {
@@ -265,8 +265,8 @@ impl HTTPApi for Api {
 }
 
 impl MarketQueries for Api {
-    fn connect_uri(&self) -> &'static str {
-        self.cfg.wss_api.as_ref()
+    fn connect_uri(&self) -> &String {
+        &self.cfg.wss_api
     }
 
     fn pong(&self) -> &'static str {

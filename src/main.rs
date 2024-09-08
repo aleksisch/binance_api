@@ -14,10 +14,10 @@ use crate::runner::Runner;
 use crate::scheme::connector::{HTTPApi, MarketQueries};
 use crate::structure::{Exchange, Instrument};
 use clap::Parser;
-use futures_util::future::{join_all, BoxFuture};
+use futures_util::future::{join_all};
+use futures_util::{future};
 use std::collections::HashMap;
 use std::sync::Arc;
-use futures_util::{future, StreamExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -31,7 +31,11 @@ struct Args {
     num_conn: u32,
     #[arg(short, long, default_value = "src/endpoints.toml")]
     config_path: String,
-    #[arg(long, default_value = "100", help = "Maximum number of missed ids, after which request snapshot")]
+    #[arg(
+        long,
+        default_value = "100",
+        help = "Maximum number of missed ids, after which request snapshot"
+    )]
     delay_limit: u32,
 }
 
@@ -46,30 +50,39 @@ async fn main() {
         args.instruments,
         args.num_conn
     );
-    let cfg = MDConfig::new(args.config_path).expect("Failed to parse")
+    let cfg = MDConfig::new(args.config_path).expect("Failed to parse");
+    let binance_cfg = cfg.get(Exchange::BINANCE).expect("Expected binance config");
 
-    let (tx, mut rx) = mpsc::channel(100);
-
-    let wss_exchanges: Arc<Vec<Arc<dyn MarketQueries + Send + Sync>>> =
-        Arc::new(vec![Arc::new(scheme::binance::Api::new(cfg.get(Exchange::BINANCE)))]);
+    let (tx, rx) = mpsc::channel(100);
+    let wss_exchanges: Arc<Vec<Arc<dyn MarketQueries + Send + Sync>>> = Arc::new(vec![Arc::new(
+        scheme::binance::Api::new(binance_cfg.clone()),
+    )]);
 
     // todo: replace vec with HashMap. It's not easy due to async trait
-    let http_exchanges: Vec<(Exchange, Box<dyn HTTPApi + Send + Sync>)> =
-        vec![(Exchange::BINANCE, Box::new(scheme::binance::Api::new()))];
+    let http_exchanges: Vec<(Exchange, Box<dyn HTTPApi + Send + Sync>)> = vec![(
+        Exchange::BINANCE,
+        Box::new(scheme::binance::Api::new(binance_cfg.clone())),
+    )];
 
     let available: Arc<Vec<Instrument>> = Arc::new(
-        future::join_all(http_exchanges.iter().map(|(_, exch)| async {
-            exch.instrument_info()
-                .await
-                .into_iter()
-                .filter(|inst| args.instruments.contains(inst.to_raw_string()))
-                .into_iter()
-                .collect::<Vec<Instrument>>()
-        }).collect::<Vec<_>>())
-            .await
-            .into_iter()
-            .flatten()
-            .collect());
+        future::join_all(
+            http_exchanges
+                .iter()
+                .map(|(_, exch)| async {
+                    exch.instrument_info()
+                        .await
+                        .into_iter()
+                        .filter(|inst| args.instruments.contains(inst.to_raw_string()))
+                        .into_iter()
+                        .collect::<Vec<Instrument>>()
+                })
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .into_iter()
+        .flatten()
+        .collect(),
+    );
     log::debug!("{:?}", &available);
 
     let mut handles: Vec<JoinHandle<()>> = vec![];

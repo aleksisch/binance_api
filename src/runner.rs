@@ -1,16 +1,13 @@
 use crate::lob::order_book::DepthUpdateError;
 use crate::lob::orderbooks::DepthBookManager;
-use crate::scheme;
 use crate::scheme::connector::{HTTPApi, MarketQueries, WssStream};
 use crate::structure::{Exchange, Instrument, MDResponse, Snapshot};
 use log::{debug, error, info, warn};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
-use tokio::time::sleep;
 
 pub struct Runner;
 
@@ -85,7 +82,7 @@ impl Runner {
                         let http_api = exch.iter().find(|(e, _)| &inst.exchange == e);
                         match http_api {
                             None => {}
-                            Some((exchange, api)) => {
+                            Some((_exchange, api)) => {
                                 match sender.try_send(MDResponse::Snapshot(
                                     Self::request_snapshot(api.as_ref(), &inst).await,
                                 )) {

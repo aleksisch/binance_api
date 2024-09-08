@@ -1,7 +1,6 @@
 use crate::common::{Id, Level, Precision, Price, Qty};
 use crate::structure;
 use crate::structure::{Delta, MDResponse, Snapshot, Trade};
-use futures_util::future::err;
 use log::{debug, info, warn};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -232,7 +231,7 @@ impl OrderBook {
     fn try_apply_scheduled(&mut self) -> Result<&Self, DepthUpdateError> {
         let mut error: Option<DepthUpdateError> = None;
 
-        while let Some((k, v)) = self.scheduled.pop_first() {
+        while let Some((_id, v)) = self.scheduled.pop_first() {
             let res = self.try_apply_delta(v);
             match res {
                 Some(DepthUpdateError::StaleUpdate) => error = Some(DepthUpdateError::StaleUpdate),

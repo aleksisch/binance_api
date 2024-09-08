@@ -1,7 +1,6 @@
 use crate::structure;
 use crate::structure::{Instrument, MDResponse};
 use async_trait::async_trait;
-use clap::builder::Str;
 use std::collections::HashMap;
 
 #[derive(Clone)]
@@ -21,7 +20,7 @@ pub type Streams = Vec<WssStream>;
 pub type Instruments = Vec<Instrument>;
 pub type AliasInstrument = HashMap<String, Instrument>;
 pub trait MarketQueries {
-    fn connect_uri(&self) -> &'static str;
+    fn connect_uri(&self) -> &String;
     fn pong(&self) -> &'static str;
     fn subscribe(&self, inst: &Instruments, stream: &Streams) -> String;
     fn subscribe_single(&self, inst: &Instrument, stream: &Streams) -> String;
