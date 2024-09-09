@@ -15,7 +15,7 @@ impl HTTPClient {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        let res = client.get(url).await.unwrap();
+        let res = client.get(url).send().await.unwrap();
         let body = res.text().await.unwrap().to_string();
         from_str::<T>(body.as_str())
     }
