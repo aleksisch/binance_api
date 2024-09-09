@@ -14,8 +14,8 @@ use crate::runner::Runner;
 use crate::scheme::connector::{HTTPApi, MarketQueries};
 use crate::structure::{Exchange, Instrument};
 use clap::Parser;
-use futures_util::future::{join_all};
-use futures_util::{future};
+use futures_util::future;
+use futures_util::future::join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -116,5 +116,4 @@ async fn main() {
     ));
 
     join_all(handles).await;
-    // handles.iter().map(|h| h.)
 }

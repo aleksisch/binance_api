@@ -3,7 +3,7 @@ use crate::lob::orderbooks::DepthBookManager;
 use crate::scheme::connector::{HTTPApi, MarketQueries, WssStream};
 use crate::structure::{Exchange, Instrument, MDResponse, Snapshot};
 use log::{debug, error, info, warn};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -75,7 +75,9 @@ impl Runner {
                     continue;
                 }
                 let val = msg.unwrap();
-                let inst = val.get_inst().unwrap();
+                let inst = val
+                    .get_inst()
+                    .expect("instrument should be available for all types of updates coming here");
                 match depthbooks.update(&inst, val) {
                     Ok(depth) => println!("{}", depth),
                     Err(DepthUpdateError::DepthStale) => {

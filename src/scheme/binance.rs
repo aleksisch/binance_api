@@ -57,9 +57,9 @@ impl Symbol {
                     .get("tickSize")
                     .expect("tickSize not found")
                     .as_str()
-                    .unwrap()
+                    .expect("Failed to convert tickSize to string")
                     .parse::<f32>()
-                    .unwrap(),
+                    .expect("Expected float in tickSize"),
             ),
             Qty::new(
                 qty.as_object()
@@ -67,9 +67,9 @@ impl Symbol {
                     .get("stepSize")
                     .expect("stepSize not found")
                     .as_str()
-                    .unwrap()
+                    .expect("Failed to convert stepSize to string")
                     .parse::<f32>()
-                    .unwrap(),
+                    .expect("Expected float in stepSize"),
             ),
         )
     }
@@ -193,14 +193,14 @@ impl Delta {
 }
 
 impl Snapshot {
-    fn to_regular(self, inst: Instrument) -> Option<structure::Snapshot> {
-        Some(structure::Snapshot::new(
+    fn to_regular(self, inst: Instrument) -> structure::Snapshot {
+        structure::Snapshot::new(
             inst,
             pair_to_levels(self.buy.iter().rev()),
             pair_to_levels(self.sell.iter()),
             common::Id(self.last_id),
             self.message_time,
-        ))
+        )
     }
 }
 
@@ -230,7 +230,7 @@ impl HTTPApi for Api {
     async fn instrument_info(&self) -> Vec<Instrument> {
         HTTPClient::get::<ExchangeInfo>(self.get_api_url(self.cfg.exchange_info.as_ref()).as_ref())
             .await
-            .unwrap()
+            .expect("Failed to get exchange info")
             .symbols
             .iter()
             .map(|symb| {
@@ -254,13 +254,12 @@ impl HTTPApi for Api {
                 &self.get_api_url(self.cfg.snapshot.as_ref()),
                 &[("symbol", inst.to_raw_string())],
             )
-            .unwrap()
+            .expect("Failed to get snapshot url")
             .as_str(),
         )
         .await
-        .unwrap()
+        .expect("Failed to get snapshot from Binance")
         .to_regular(inst)
-        .unwrap()
     }
 }
 
@@ -274,11 +273,13 @@ impl MarketQueries for Api {
     }
 
     fn subscribe(&self, inst: &Vec<Instrument>, stream: &Streams) -> String {
-        serde_json::to_string(&Connect::new(Self::get_sub_id(), &inst, &stream)).unwrap()
+        serde_json::to_string(&Connect::new(Self::get_sub_id(), &inst, &stream))
+            .expect("Failed to serialize")
     }
 
     fn subscribe_single(&self, inst: &Instrument, stream: &Streams) -> String {
-        serde_json::to_string(&Connect::new_single(Self::get_sub_id(), &inst, stream)).unwrap()
+        serde_json::to_string(&Connect::new_single(Self::get_sub_id(), &inst, stream))
+            .expect("Failed to serialize")
     }
 
     fn unsubscribe(&self, _instrument: &Vec<Instrument>, _stream: &Streams) -> String {

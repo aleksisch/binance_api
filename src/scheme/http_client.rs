@@ -1,6 +1,7 @@
-use serde_json::from_str;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+use serde_json::from_str;
+use std::fmt::format;
 use tungstenite::client;
 
 pub struct HTTPClient;
@@ -15,8 +16,16 @@ impl HTTPClient {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        let res = client.get(url).send().await.unwrap();
-        let body = res.text().await.unwrap().to_string();
+        let res = client
+            .get(url)
+            .send()
+            .await
+            .expect(format!("HTTP request failed {url}").as_str());
+        let body = res
+            .text()
+            .await
+            .expect("Conversion of response to text failed")
+            .to_string();
         from_str::<T>(body.as_str())
     }
 }
